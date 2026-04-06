@@ -89,6 +89,13 @@
         align-items: center;
       }
 
+      .filter-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        padding: 0 0.85rem 0.85rem;
+      }
+
       .search {
         width: 100%;
         padding: 0.82rem 0.95rem;
@@ -171,7 +178,7 @@
       .station-card {
         width: 100%;
         display: grid;
-        gap: 0.2rem;
+        gap: 0.4rem;
         text-align: left;
         padding: 0.78rem 0.88rem;
         border-radius: 0.9rem;
@@ -192,6 +199,64 @@
 
       .station-card strong {
         font-size: 1rem;
+      }
+
+      .station-copy {
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      .line-filter {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.48rem 0.7rem;
+        border-radius: 999px;
+        border: 1px solid rgba(17, 32, 25, 0.12);
+        background: rgba(255, 255, 255, 0.8);
+        color: var(--ink);
+        font: inherit;
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+
+      .line-filter:hover {
+        background: rgba(255, 255, 255, 0.96);
+      }
+
+      .line-filter.active {
+        border-color: rgba(17, 32, 25, 0.18);
+        box-shadow: inset 0 0 0 1px rgba(17, 32, 25, 0.08);
+      }
+
+      .line-filter-label {
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
+      .line-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        align-items: center;
+      }
+
+      .line-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.65rem;
+        height: 1.65rem;
+        padding: 0 0.5rem;
+        border-radius: 999px;
+        background: var(--line-color, var(--ink));
+        color: var(--line-text, #fff);
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        line-height: 1;
+        box-shadow: inset 0 0 0 1px rgba(17, 32, 25, 0.08);
       }
 
       .map-ui {
@@ -224,6 +289,11 @@
         margin: 0;
         color: var(--muted);
         font-size: 0.88rem;
+      }
+
+      .popup-stack {
+        display: grid;
+        gap: 0.55rem;
       }
 
       .station-label {
@@ -343,6 +413,7 @@
                   </button>
                 </div>
               </div>
+              <div id="line-filters" class="filter-bar" aria-label="Filter by line"></div>
             </div>
             <div class="floating-panel station-panel">
               <ul id="station-list" class="station-list"></ul>
@@ -359,7 +430,7 @@
       crossorigin=""
     ></script>
     <script>
-      const stations = [
+      const stationData = [
         { name: "Ammerud", lat: 59.95777778, lon: 10.87083333 },
         { name: "Avløs", lat: 59.91444444, lon: 10.55166667 },
         { name: "Bekkestua", lat: 59.91633, lon: 10.58756 },
@@ -463,9 +534,215 @@
         { name: "Østhorn", lat: 59.95583333, lon: 10.75111111 },
       ];
 
+      const lineMeta = {
+        "1": { color: "#219653", text: "#ffffff", label: "Line 1" },
+        "2": { color: "#d94b2b", text: "#ffffff", label: "Line 2" },
+        "3": { color: "#f2b705", text: "#112019", label: "Line 3" },
+        "4": { color: "#2f78d8", text: "#ffffff", label: "Line 4" },
+        "5": { color: "#7a53c8", text: "#ffffff", label: "Line 5" },
+      };
+
+      const lineStations = {
+        "1": [
+          "Bergkrystallen",
+          "Munkelia",
+          "Lambertseter",
+          "Karlsrud",
+          "Brattlikollen",
+          "Ryen",
+          "Manglerud",
+          "Høyenhall",
+          "Brynseng",
+          "Helsfyr",
+          "Ensjø",
+          "Tøyen",
+          "Grønland",
+          "Jernbanetorget",
+          "Stortinget",
+          "Nationaltheatret",
+          "Majorstuen",
+          "Frøen",
+          "Steinerud",
+          "Vinderen",
+          "Gaustad",
+          "Ris",
+          "Slemdal",
+          "Gråkammen",
+          "Gulleråsen",
+          "Vettakollen",
+          "Skådalen",
+          "Midtstuen",
+          "Besserud",
+          "Holmenkollen",
+          "Voksenlia",
+          "Skogen",
+          "Lillevann",
+          "Voksenkollen",
+          "Frognerseteren",
+        ],
+        "2": [
+          "Østerås",
+          "Lijordet",
+          "Eiksmarka",
+          "Ekraveien",
+          "Røa",
+          "Hovseter",
+          "Holmen",
+          "Makrellbekken",
+          "Smestad",
+          "Borgen",
+          "Majorstuen",
+          "Nationaltheatret",
+          "Stortinget",
+          "Jernbanetorget",
+          "Grønland",
+          "Tøyen",
+          "Ensjø",
+          "Helsfyr",
+          "Brynseng",
+          "Hellerud",
+          "Tveita",
+          "Haugerud",
+          "Trosterud",
+          "Lindeberg",
+          "Furuset",
+          "Ellingsrudåsen",
+        ],
+        "3": [
+          "Kolsås",
+          "Hauger",
+          "Gjettum",
+          "Avløs",
+          "Haslum",
+          "Gjønnes",
+          "Bekkestua",
+          "Ringstabekk",
+          "Jar",
+          "Bjørnsletta",
+          "Åsjordet",
+          "Ullernåsen",
+          "Montebello",
+          "Smestad",
+          "Borgen",
+          "Majorstuen",
+          "Nationaltheatret",
+          "Stortinget",
+          "Jernbanetorget",
+          "Grønland",
+          "Tøyen",
+          "Ensjø",
+          "Helsfyr",
+          "Brynseng",
+          "Hellerud",
+          "Godlia",
+          "Skøyenåsen",
+          "Oppsal",
+          "Ulsrud",
+          "Bøler",
+          "Bogerud",
+          "Skullerud",
+          "Mortensrud",
+        ],
+        "4": [
+          "Bergkrystallen",
+          "Munkelia",
+          "Lambertseter",
+          "Karlsrud",
+          "Brattlikollen",
+          "Ryen",
+          "Manglerud",
+          "Høyenhall",
+          "Brynseng",
+          "Helsfyr",
+          "Ensjø",
+          "Tøyen",
+          "Grønland",
+          "Jernbanetorget",
+          "Stortinget",
+          "Nationaltheatret",
+          "Majorstuen",
+          "Blindern",
+          "Forskningsparken",
+          "Ullevål stadion",
+          "Nydalen",
+          "Storo",
+          "Sinsen",
+          "Løren",
+          "Økern",
+          "Risløkka",
+          "Vollebekk",
+          "Linderud",
+          "Veitvet",
+          "Rødtvet",
+          "Kalbakken",
+          "Ammerud",
+          "Grorud",
+          "Romsås",
+          "Rommen",
+          "Stovner",
+          "Vestli",
+        ],
+        "5": [
+          "Vestli",
+          "Stovner",
+          "Rommen",
+          "Romsås",
+          "Grorud",
+          "Ammerud",
+          "Kalbakken",
+          "Rødtvet",
+          "Veitvet",
+          "Linderud",
+          "Vollebekk",
+          "Risløkka",
+          "Økern",
+          "Hasle",
+          "Carl Berners plass",
+          "Tøyen",
+          "Grønland",
+          "Jernbanetorget",
+          "Stortinget",
+          "Nationaltheatret",
+          "Majorstuen",
+          "Blindern",
+          "Forskningsparken",
+          "Ullevål stadion",
+          "Nydalen",
+          "Storo",
+          "Sinsen",
+          "Berg",
+          "Tåsen",
+          "Østhorn",
+          "Holstein",
+          "Kringsjå",
+          "Sognsvann",
+        ],
+      };
+
+      const stationLines = new Map();
+      Object.entries(lineStations).forEach(([line, names]) => {
+        names.forEach((name) => {
+          const lines = stationLines.get(name) ?? [];
+          lines.push(line);
+          stationLines.set(name, lines);
+        });
+      });
+
+      const stations = stationData.map((station) => {
+        const lines = (stationLines.get(station.name) ?? []).sort();
+        return {
+          ...station,
+          lines,
+          searchText: `${station.name} ${lines
+            .flatMap((line) => [line, `line ${line}`, `linje ${line}`])
+            .join(" ")}`.toLocaleLowerCase("en"),
+        };
+      });
+
       const searchInput = document.getElementById("search");
       const resetViewButton = document.getElementById("reset-view");
       const stationList = document.getElementById("station-list");
+      const lineFilters = document.getElementById("line-filters");
       const togglePanelButton = document.getElementById("toggle-panel");
       const collapsedToggleButton = document.getElementById("collapsed-toggle-button");
       const collapsedToggle = document.getElementById("collapsed-toggle");
@@ -497,25 +774,59 @@
       const labelZoomThreshold = 13;
       let activeStation = "";
       let currentQuery = "";
+      let activeLineFilter = "";
       let isPanelHidden = true;
 
-      const markerStyle = (matched, selected) => ({
-        radius: selected ? 8 : 6,
-        color: selected ? "#7f2008" : "#ffffff",
-        weight: selected ? 2.3 : 1.6,
-        fillColor: "#e4572e",
-        opacity: matched ? 1 : 0.18,
-        fillOpacity: selected ? 0.98 : matched ? 0.82 : 0.1,
-      });
+      const badgeHtml = (line) =>
+        `<span class="line-badge" style="--line-color:${lineMeta[line].color}; --line-text:${lineMeta[line].text};" aria-label="${lineMeta[line].label}">${line}</span>`;
+
+      const lineBadgesHtml = (lines) =>
+        `<div class="line-badges">${lines.map((line) => badgeHtml(line)).join("")}</div>`;
+
+      const lineCopy = (station) =>
+        station.lines.length === 1
+          ? `Served by ${lineMeta[station.lines[0]].label}`
+          : `Served by lines ${station.lines.join(", ")}`;
+
+      const markerAccent = (station) => {
+        if (activeLineFilter && station.lines.includes(activeLineFilter)) {
+          return lineMeta[activeLineFilter].color;
+        }
+
+        if (station.lines.length === 1) {
+          return lineMeta[station.lines[0]].color;
+        }
+
+        return "#5f6c64";
+      };
+
+      const markerStyle = (station, matched, selected) => {
+        const accent = markerAccent(station);
+
+        return {
+          radius: selected ? 8 : 6,
+          color: selected ? "#112019" : "#ffffff",
+          weight: selected ? 2.3 : 1.6,
+          fillColor: accent,
+          opacity: matched ? 1 : 0.18,
+          fillOpacity: selected ? 0.98 : matched ? 0.84 : 0.1,
+        };
+      };
 
       const matchesSearch = (station) =>
-        station.name.toLocaleLowerCase("en").includes(currentQuery);
+        station.searchText.includes(currentQuery);
+
+      const matchesLineFilter = (station) =>
+        !activeLineFilter || station.lines.includes(activeLineFilter);
+
+      const matchesFilters = (station) => matchesSearch(station) && matchesLineFilter(station);
 
       const popupHtml = (station) =>
         `
-          <div>
+          <div class="popup-stack">
             <p class="popup-title">${station.name}</p>
-            <p class="popup-copy">Oslo T-bane station</p>
+            <p class="popup-copy">${lineCopy(station)}</p>
+            ${lineBadgesHtml(station.lines)}
           </div>
         `;
 
@@ -540,7 +851,10 @@
 
       stations.forEach((station) => {
         const direction = labelDirection(station);
-        const marker = L.circleMarker([station.lat, station.lon], markerStyle(true, false))
+        const marker = L.circleMarker(
+          [station.lat, station.lon],
+          markerStyle(station, true, false)
+        )
           .addTo(map)
           .bindPopup(popupHtml(station))
           .bindTooltip(station.name, {
@@ -590,7 +904,7 @@
       }
 
       function renderList() {
-        const visibleStations = stations.filter(matchesSearch);
+        const visibleStations = stations.filter(matchesFilters);
         stationList.innerHTML = "";
 
         if (!visibleStations.length) {
@@ -612,7 +926,11 @@
             button.classList.add("active");
           }
 
-          button.innerHTML = `<strong>${station.name}</strong>`;
+          button.innerHTML = `
+            <strong>${station.name}</strong>
+            ${lineBadgesHtml(station.lines)}
+            <span class="station-copy">${lineCopy(station)}</span>
+          `;
 
           button.addEventListener("click", () => focusStation(station.name));
           item.appendChild(button);
@@ -620,11 +938,57 @@
         });
       }
 
+      function renderLineFilters() {
+        const searchFilteredStations = stations.filter(matchesSearch);
+        const buttons = [
+          `<button
+            type="button"
+            class="line-filter${activeLineFilter ? "" : " active"}"
+            data-line=""
+            aria-pressed="${String(!activeLineFilter)}"
+          >
+            <span>All lines</span>
+            <span class="line-filter-label">${searchFilteredStations.length}</span>
+          </button>`,
+          ...Object.keys(lineMeta).map((line) => {
+            const count = searchFilteredStations.filter((station) =>
+              station.lines.includes(line)
+            ).length;
+
+            return `<button
+              type="button"
+              class="line-filter${activeLineFilter === line ? " active" : ""}"
+              data-line="${line}"
+              aria-pressed="${String(activeLineFilter === line)}"
+              title="${lineMeta[line].label}"
+            >
+              ${badgeHtml(line)}
+              <span class="line-filter-label">${count}</span>
+            </button>`;
+          }),
+        ];
+
+        lineFilters.innerHTML = buttons.join("");
+
+        lineFilters.querySelectorAll("[data-line]").forEach((button) => {
+          button.addEventListener("click", () => {
+            activeLineFilter = button.dataset.line;
+
+            if (activeStation && !matchesFilters(stationsByName.get(activeStation))) {
+              activeStation = "";
+              map.closePopup();
+            }
+
+            refresh();
+          });
+        });
+      }
+
       function refreshMarkers() {
         stations.forEach((station) => {
-          const matched = matchesSearch(station);
+          const matched = matchesFilters(station);
           const selected = station.name === activeStation;
-          markersByName.get(station.name).setStyle(markerStyle(matched, selected));
+          markersByName.get(station.name).setStyle(markerStyle(station, matched, selected));
         });
       }
 
@@ -634,7 +998,7 @@
         stations.forEach((station) => {
           const marker = markersByName.get(station.name);
           const tooltip = labelsByName.get(station.name);
-          const matched = matchesSearch(station);
+          const matched = matchesFilters(station);
           const selected = station.name === activeStation;
           const shouldShow =
             selected || (matched && (currentQuery.length > 0 || zoom >= labelZoomThreshold));
@@ -653,6 +1017,7 @@
       }
 
       function refresh() {
+        renderLineFilters();
         renderList();
         refreshMarkers();
         refreshLabels();
@@ -668,8 +1033,9 @@
       searchInput.addEventListener("input", (event) => {
         currentQuery = event.target.value.trim().toLocaleLowerCase("en");
 
-        if (activeStation && !matchesSearch(stationsByName.get(activeStation))) {
+        if (activeStation && !matchesFilters(stationsByName.get(activeStation))) {
           activeStation = "";
+          map.closePopup();
         }
 
         refresh();
@@ -694,6 +1060,7 @@
         event.stopPropagation();
         activeStation = "";
         currentQuery = "";
+        activeLineFilter = "";
         searchInput.value = "";
         map.fitBounds(allBounds.pad(0.08));
         map.closePopup();
