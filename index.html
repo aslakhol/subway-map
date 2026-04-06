@@ -741,6 +741,7 @@
 
       const EARTH_RADIUS_METERS = 6371000;
       const BUFFER_RADIUS_METERS = 500;
+      const STATION_SELECTION_RADIUS_METERS = 500;
 
       function toRadians(value) {
         return (value * Math.PI) / 180;
@@ -1004,6 +1005,14 @@
           interactive: false,
         }
       ).addTo(map);
+      const stationSelectionCircle = L.circle([0, 0], {
+        radius: STATION_SELECTION_RADIUS_METERS,
+        color: "#112019",
+        weight: 2,
+        opacity: 0.7,
+        fillOpacity: 0,
+        interactive: false,
+      });
       const mapBounds = L.latLngBounds(
         stationBounds.getSouthWest(),
         stationBounds.getNorthEast()
@@ -1262,11 +1271,31 @@
         });
       }
 
+      function refreshSelectionCircle() {
+        const station = stationsByName.get(activeStation);
+
+        if (!station) {
+          stationSelectionCircle.remove();
+          return;
+        }
+
+        stationSelectionCircle
+          .setLatLng([station.lat, station.lon])
+          .setRadius(STATION_SELECTION_RADIUS_METERS);
+
+        if (!map.hasLayer(stationSelectionCircle)) {
+          stationSelectionCircle.addTo(map);
+        }
+
+        stationSelectionCircle.bringToBack();
+      }
+
       function refresh() {
         renderLineFilters();
         renderList();
         refreshMarkers();
         refreshLabels();
+        refreshSelectionCircle();
       }
 
       function syncPanelVisibility() {
