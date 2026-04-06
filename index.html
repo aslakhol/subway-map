@@ -1038,11 +1038,6 @@
       const lineBadgesHtml = (lines) =>
         `<div class="line-badges">${lines.map((line) => badgeHtml(line)).join("")}</div>`;
 
-      const lineCopy = (station) =>
-        station.lines.length === 1
-          ? `Served by ${lineMeta[station.lines[0]].label}`
-          : `Served by lines ${station.lines.join(", ")}`;
-
       const markerAccent = (station) => {
         if (activeLineFilter && station.lines.includes(activeLineFilter)) {
           return lineMeta[activeLineFilter].color;
@@ -1184,7 +1179,6 @@
           button.innerHTML = `
             <strong>${station.name}</strong>
             ${lineBadgesHtml(station.lines)}
-            <span class="station-copy">${lineCopy(station)}</span>
           `;
 
           button.addEventListener("click", () => focusStation(station.name));
