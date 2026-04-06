@@ -989,6 +989,7 @@
       const map = L.map("map", {
         zoomControl: false,
         minZoom: 10,
+        closePopupOnClick: false,
       });
 
       L.control.zoom({ position: "bottomright" }).addTo(map);
@@ -1385,6 +1386,18 @@
         refreshSelectionCircle();
       }
 
+      function isWithinActiveStationRadius(latlng) {
+        const station = stationsByName.get(activeStation);
+        if (!station || !latlng) {
+          return false;
+        }
+
+        return (
+          map.distance(latlng, L.latLng(station.lat, station.lon)) <=
+          STATION_SELECTION_RADIUS_METERS
+        );
+      }
+
       function syncPanelVisibility() {
         overlayStack.hidden = isPanelHidden;
         collapsedToggle.hidden = !isPanelHidden;
@@ -1430,6 +1443,20 @@
       });
 
       map.on("zoomend", refreshLabels);
+      map.on("click", (event) => {
+        if (!activeStation) {
+          return;
+        }
+
+        if (isWithinActiveStationRadius(event.latlng)) {
+          map.closePopup();
+          return;
+        }
+
+        activeStation = "";
+        map.closePopup();
+        refresh();
+      });
 
       syncPanelVisibility();
       refresh();
