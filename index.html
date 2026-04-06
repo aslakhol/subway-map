@@ -529,11 +529,16 @@
       ];
 
       const lineMeta = {
-        "1": { color: "#219653", text: "#ffffff", label: "Line 1" },
-        "2": { color: "#d94b2b", text: "#ffffff", label: "Line 2" },
-        "3": { color: "#f2b705", text: "#112019", label: "Line 3" },
-        "4": { color: "#2f78d8", text: "#ffffff", label: "Line 4" },
-        "5": { color: "#7a53c8", text: "#ffffff", label: "Line 5" },
+        "1": { color: "#009cdc", text: "#ffffff", label: "Line 1" },
+        "2": { color: "#ea5b0c", text: "#ffffff", label: "Line 2" },
+        "3": { color: "#a863a5", text: "#ffffff", label: "Line 3" },
+        "4": { color: "#00489a", text: "#ffffff", label: "Line 4" },
+        "5": { color: "#3aaa35", text: "#ffffff", label: "Line 5" },
+      };
+
+      const stationNotes = {
+        Gulleråsen:
+          "Only stops when heading towards Frognerseteren",
       };
 
       const lineStations = {
@@ -727,6 +732,7 @@
         return {
           ...station,
           lines,
+          note: stationNotes[station.name] ?? "",
           searchText: `${station.name} ${lines
             .flatMap((line) => [line, `line ${line}`, `linje ${line}`])
             .join(" ")}`.toLocaleLowerCase("en"),
@@ -1075,6 +1081,7 @@
           <div class="popup-stack">
             <p class="popup-title">${station.name}</p>
             ${lineBadgesHtml(station.lines)}
+            ${station.note ? `<p class="station-copy">${station.note}</p>` : ""}
           </div>
         `;
 
