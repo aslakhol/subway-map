@@ -259,6 +259,35 @@
         box-shadow: inset 0 0 0 1px rgba(17, 32, 25, 0.08);
       }
 
+      .station-marker-icon {
+        background: transparent;
+        border: 0;
+      }
+
+      .station-marker-shell {
+        display: grid;
+        place-items: center;
+        transition:
+          opacity 160ms ease,
+          transform 160ms ease,
+          filter 160ms ease;
+        filter: drop-shadow(0 3px 8px rgba(17, 32, 25, 0.16));
+      }
+
+      .station-marker-shell svg {
+        display: block;
+        overflow: visible;
+      }
+
+      .station-marker-shell.is-selected {
+        transform: scale(1.04);
+        filter: drop-shadow(0 5px 12px rgba(17, 32, 25, 0.24));
+      }
+
+      .station-marker-shell.is-muted {
+        opacity: 0.18;
+      }
+
       .map-ui {
         position: absolute;
         z-index: 500;
@@ -1038,28 +1067,88 @@
       const lineBadgesHtml = (lines) =>
         `<div class="line-badges">${lines.map((line) => badgeHtml(line)).join("")}</div>`;
 
-      const markerAccent = (station) => {
-        if (activeLineFilter && station.lines.includes(activeLineFilter)) {
-          return lineMeta[activeLineFilter].color;
-        }
-
-        if (station.lines.length === 1) {
-          return lineMeta[station.lines[0]].color;
-        }
-
-        return "#5f6c64";
+      const polarToCartesian = (cx, cy, radius, angleDegrees) => {
+        const radians = ((angleDegrees - 90) * Math.PI) / 180;
+        return {
+          x: cx + radius * Math.cos(radians),
+          y: cy + radius * Math.sin(radians),
+        };
       };
 
-      const markerStyle = (station, matched, selected) => {
-        const accent = markerAccent(station);
+      const pieSlicePath = (cx, cy, radius, startAngle, endAngle) => {
+        const start = polarToCartesian(cx, cy, radius, endAngle);
+        const end = polarToCartesian(cx, cy, radius, startAngle);
+        const largeArcFlag = endAngle - startAngle > 180 ? 1 : 0;
+
+        return [
+          `M ${cx} ${cy}`,
+          `L ${start.x.toFixed(2)} ${start.y.toFixed(2)}`,
+          `A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x.toFixed(2)} ${end.y.toFixed(2)}`,
+          "Z",
+        ].join(" ");
+      };
+
+      const markerSlices = (station) => {
+        if (activeLineFilter && station.lines.includes(activeLineFilter)) {
+          return [
+            activeLineFilter,
+            ...station.lines.filter((line) => line !== activeLineFilter),
+          ];
+        }
+
+        return station.lines;
+      };
+
+      const stationMarkerIcon = (station, matched, selected) => {
+        const size = selected ? 22 : 18;
+        const radius = selected ? 8 : 7;
+        const center = size / 2;
+        const stroke = selected ? "#112019" : "#ffffff";
+        const strokeWidth = selected ? 2.4 : 1.8;
+        const sliceStroke = "rgba(255, 252, 247, 0.92)";
+        const lines = markerSlices(station);
+        const sliceAngle = 360 / lines.length;
+        const slices =
+          lines.length === 1
+            ? `<circle cx="${center}" cy="${center}" r="${radius}" fill="${lineMeta[lines[0]].color}" />`
+            : lines
+                .map((line, index) => {
+                  const startAngle = -90 + index * sliceAngle;
+                  const endAngle = startAngle + sliceAngle;
+                  return `<path d="${pieSlicePath(
+                    center,
+                    center,
+                    radius,
+                    startAngle,
+                    endAngle
+                  )}" fill="${lineMeta[line].color}" stroke="${sliceStroke}" stroke-width="0.85" />`;
+                })
+                .join("");
+        const svg = `
+          <div class="station-marker-shell${selected ? " is-selected" : ""}${matched ? "" : " is-muted"}" style="width:${size}px; height:${size}px;">
+            <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">
+              ${slices}
+              <circle
+                cx="${center}"
+                cy="${center}"
+                r="${radius}"
+                fill="none"
+                stroke="${stroke}"
+                stroke-width="${strokeWidth}"
+              />
+            </svg>
+          </div>
+        `;
 
         return {
-          radius: selected ? 8 : 6,
-          color: selected ? "#112019" : "#ffffff",
-          weight: selected ? 2.3 : 1.6,
-          fillColor: accent,
-          opacity: matched ? 1 : 0.18,
-          fillOpacity: selected ? 0.98 : matched ? 0.84 : 0.1,
+          icon: L.divIcon({
+            className: "station-marker-icon",
+            html: svg,
+            iconSize: [size, size],
+            iconAnchor: [center, center],
+            popupAnchor: [0, -Math.round(size * 0.45)],
+          }),
+          zIndexOffset: selected ? 1200 : matched ? 400 : 0,
         };
       };
 
@@ -1101,10 +1190,11 @@
 
       stations.forEach((station) => {
         const direction = labelDirection(station);
-        const marker = L.circleMarker(
-          [station.lat, station.lon],
-          markerStyle(station, true, false)
-        )
+        const initialMarker = stationMarkerIcon(station, true, false);
+        const marker = L.marker([station.lat, station.lon], {
+          icon: initialMarker.icon,
+          zIndexOffset: initialMarker.zIndexOffset,
+        })
           .addTo(map)
           .bindPopup(popupHtml(station))
           .bindTooltip(station.name, {
@@ -1237,7 +1327,10 @@
         stations.forEach((station) => {
           const matched = matchesFilters(station);
           const selected = station.name === activeStation;
-          markersByName.get(station.name).setStyle(markerStyle(station, matched, selected));
+          const marker = markersByName.get(station.name);
+          const nextMarker = stationMarkerIcon(station, matched, selected);
+          marker.setIcon(nextMarker.icon);
+          marker.setZIndexOffset(nextMarker.zIndexOffset);
         });
       }
 
