@@ -739,6 +739,214 @@
         };
       });
 
+      const EARTH_RADIUS_METERS = 6371000;
+      const BUFFER_RADIUS_METERS = 500;
+
+      function toRadians(value) {
+        return (value * Math.PI) / 180;
+      }
+
+      function toDegrees(value) {
+        return (value * 180) / Math.PI;
+      }
+
+      function createLocalProjection(points) {
+        const origin = points.reduce(
+          (accumulator, point) => ({
+            lat: accumulator.lat + point.lat / points.length,
+            lon: accumulator.lon + point.lon / points.length,
+          }),
+          { lat: 0, lon: 0 }
+        );
+
+        const originLatRadians = toRadians(origin.lat);
+
+        return {
+          project(point) {
+            return {
+              x:
+                EARTH_RADIUS_METERS *
+                toRadians(point.lon - origin.lon) *
+                Math.cos(originLatRadians),
+              y: EARTH_RADIUS_METERS * toRadians(point.lat - origin.lat),
+            };
+          },
+          unproject(point) {
+            return {
+              lat: origin.lat + toDegrees(point.y / EARTH_RADIUS_METERS),
+              lon:
+                origin.lon +
+                toDegrees(
+                  point.x /
+                    (EARTH_RADIUS_METERS * Math.cos(originLatRadians))
+                ),
+            };
+          },
+        };
+      }
+
+      function distanceBetweenPoints(a, b) {
+        return Math.hypot(a.x - b.x, a.y - b.y);
+      }
+
+      function isPointInsideCircle(point, circle) {
+        if (!circle) {
+          return false;
+        }
+
+        return distanceBetweenPoints(point, circle) <= circle.radius + 1e-7;
+      }
+
+      function circleFromTwoPoints(a, b) {
+        return {
+          x: (a.x + b.x) / 2,
+          y: (a.y + b.y) / 2,
+          radius: distanceBetweenPoints(a, b) / 2,
+        };
+      }
+
+      function circleFromThreePoints(a, b, c) {
+        const determinant =
+          2 *
+          (a.x * (b.y - c.y) +
+            b.x * (c.y - a.y) +
+            c.x * (a.y - b.y));
+
+        if (Math.abs(determinant) < 1e-9) {
+          return null;
+        }
+
+        const aSquared = a.x * a.x + a.y * a.y;
+        const bSquared = b.x * b.x + b.y * b.y;
+        const cSquared = c.x * c.x + c.y * c.y;
+
+        const center = {
+          x:
+            (aSquared * (b.y - c.y) +
+              bSquared * (c.y - a.y) +
+              cSquared * (a.y - b.y)) /
+            determinant,
+          y:
+            (aSquared * (c.x - b.x) +
+              bSquared * (a.x - c.x) +
+              cSquared * (b.x - a.x)) /
+            determinant,
+        };
+
+        return {
+          ...center,
+          radius: distanceBetweenPoints(center, a),
+        };
+      }
+
+      function createMinimumEnclosingCircle(points) {
+        const shuffledPoints = [...points];
+
+        for (let index = shuffledPoints.length - 1; index > 0; index -= 1) {
+          const swapIndex = Math.floor(Math.random() * (index + 1));
+          [shuffledPoints[index], shuffledPoints[swapIndex]] = [
+            shuffledPoints[swapIndex],
+            shuffledPoints[index],
+          ];
+        }
+
+        let circle = null;
+
+        for (let firstIndex = 0; firstIndex < shuffledPoints.length; firstIndex += 1) {
+          const firstPoint = shuffledPoints[firstIndex];
+
+          if (isPointInsideCircle(firstPoint, circle)) {
+            continue;
+          }
+
+          circle = { ...firstPoint, radius: 0 };
+
+          for (let secondIndex = 0; secondIndex < firstIndex; secondIndex += 1) {
+            const secondPoint = shuffledPoints[secondIndex];
+
+            if (isPointInsideCircle(secondPoint, circle)) {
+              continue;
+            }
+
+            circle = circleFromTwoPoints(firstPoint, secondPoint);
+
+            for (let thirdIndex = 0; thirdIndex < secondIndex; thirdIndex += 1) {
+              const thirdPoint = shuffledPoints[thirdIndex];
+
+              if (isPointInsideCircle(thirdPoint, circle)) {
+                continue;
+              }
+
+              const candidateCircle = circleFromThreePoints(
+                firstPoint,
+                secondPoint,
+                thirdPoint
+              );
+
+              if (candidateCircle) {
+                circle = candidateCircle;
+              }
+            }
+          }
+        }
+
+        return circle;
+      }
+
+      function buildEnclosingCircle(points, bufferRadius = 0) {
+        const projection = createLocalProjection(points);
+        const projectedPoints = points.map((point) => projection.project(point));
+        const baseCircle = createMinimumEnclosingCircle(projectedPoints);
+        const center = projection.unproject(baseCircle);
+
+        return {
+          center,
+          radius: baseCircle.radius + bufferRadius,
+        };
+      }
+
+      function circleBoundsFromCenter(center, radiusMeters) {
+        const latRadius = toDegrees(radiusMeters / EARTH_RADIUS_METERS);
+        const lonRadius = toDegrees(
+          radiusMeters /
+            (EARTH_RADIUS_METERS * Math.cos(toRadians(center.lat)))
+        );
+
+        return L.latLngBounds(
+          [center.lat - latRadius, center.lon - lonRadius],
+          [center.lat + latRadius, center.lon + lonRadius]
+        );
+      }
+
+      function buildCircleRing(center, radiusMeters, steps = 180) {
+        const lat1 = toRadians(center.lat);
+        const lon1 = toRadians(center.lon);
+        const angularDistance = radiusMeters / EARTH_RADIUS_METERS;
+        const ring = [];
+
+        for (let index = 0; index <= steps; index += 1) {
+          const bearing = (2 * Math.PI * index) / steps;
+          const sinLat1 = Math.sin(lat1);
+          const cosLat1 = Math.cos(lat1);
+          const sinAngularDistance = Math.sin(angularDistance);
+          const cosAngularDistance = Math.cos(angularDistance);
+          const sinLat2 =
+            sinLat1 * cosAngularDistance +
+            cosLat1 * sinAngularDistance * Math.cos(bearing);
+          const lat2 = Math.asin(sinLat2);
+          const lon2 =
+            lon1 +
+            Math.atan2(
+              Math.sin(bearing) * sinAngularDistance * cosLat1,
+              cosAngularDistance - sinLat1 * sinLat2
+            );
+
+          ring.push([toDegrees(lat2), toDegrees(lon2)]);
+        }
+
+        return ring;
+      }
+
       const searchInput = document.getElementById("search");
       const resetViewButton = document.getElementById("reset-view");
       const stationList = document.getElementById("station-list");
@@ -765,8 +973,46 @@
         }
       ).addTo(map);
 
-      const allBounds = L.latLngBounds(stations.map((station) => [station.lat, station.lon]));
-      map.fitBounds(allBounds.pad(0.08));
+      const enclosingCircle = buildEnclosingCircle(stations, BUFFER_RADIUS_METERS);
+      const stationBounds = L.latLngBounds(stations.map((station) => [station.lat, station.lon]));
+      const metroAreaMask = L.polygon(
+        [
+          [
+            [-85, -360],
+            [85, -360],
+            [85, 360],
+            [-85, 360],
+          ],
+          buildCircleRing(enclosingCircle.center, enclosingCircle.radius),
+        ],
+        {
+          stroke: false,
+          fillColor: "#e4572e",
+          fillOpacity: 0.06,
+          fillRule: "evenodd",
+          interactive: false,
+        }
+      ).addTo(map);
+      const metroAreaCircle = L.circle(
+        [enclosingCircle.center.lat, enclosingCircle.center.lon],
+        {
+          radius: enclosingCircle.radius,
+          color: "#e4572e",
+          weight: 2,
+          opacity: 0.85,
+          fillOpacity: 0,
+          interactive: false,
+        }
+      ).addTo(map);
+      const mapBounds = L.latLngBounds(
+        stationBounds.getSouthWest(),
+        stationBounds.getNorthEast()
+      );
+      mapBounds.extend(
+        circleBoundsFromCenter(enclosingCircle.center, enclosingCircle.radius)
+      );
+
+      map.fitBounds(mapBounds.pad(0.04));
 
       const stationsByName = new Map(stations.map((station) => [station.name, station]));
       const markersByName = new Map();
@@ -831,7 +1077,7 @@
         `;
 
       const labelDirection = (station) => {
-        const center = allBounds.getCenter();
+        const center = stationBounds.getCenter();
         const latDelta = station.lat - center.lat;
         const lonDelta = station.lon - center.lng;
 
@@ -1062,7 +1308,7 @@
         currentQuery = "";
         activeLineFilter = "";
         searchInput.value = "";
-        map.fitBounds(allBounds.pad(0.08));
+        map.fitBounds(mapBounds.pad(0.04));
         map.closePopup();
         refresh();
       });
