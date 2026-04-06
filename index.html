@@ -226,6 +226,35 @@
         font-size: 0.88rem;
       }
 
+      .station-label {
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        padding: 0;
+        color: rgba(17, 32, 25, 0.78);
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        line-height: 1;
+        pointer-events: none;
+        text-shadow:
+          -1px -1px 0 rgba(255, 252, 247, 0.98),
+          1px -1px 0 rgba(255, 252, 247, 0.98),
+          -1px 1px 0 rgba(255, 252, 247, 0.98),
+          1px 1px 0 rgba(255, 252, 247, 0.98),
+          0 6px 14px rgba(17, 32, 25, 0.12);
+        white-space: nowrap;
+      }
+
+      .station-label::before {
+        display: none;
+      }
+
+      .station-label.is-active {
+        color: var(--accent-dark);
+      }
+
       @media (max-width: 980px) {
         .overlay-stack {
           width: min(340px, calc(100vw - 5.25rem));
@@ -248,6 +277,10 @@
 
         .station-list {
           max-height: min(38vh, 320px);
+        }
+
+        .station-label {
+          font-size: 0.66rem;
         }
       }
     </style>
@@ -460,6 +493,8 @@
 
       const stationsByName = new Map(stations.map((station) => [station.name, station]));
       const markersByName = new Map();
+      const labelsByName = new Map();
+      const labelZoomThreshold = 13;
       let activeStation = "";
       let currentQuery = "";
       let isPanelHidden = true;
@@ -484,10 +519,36 @@
           </div>
         `;
 
+      const labelDirection = (station) => {
+        const center = allBounds.getCenter();
+        const latDelta = station.lat - center.lat;
+        const lonDelta = station.lon - center.lng;
+
+        if (Math.abs(lonDelta) > Math.abs(latDelta)) {
+          return lonDelta >= 0 ? "right" : "left";
+        }
+
+        return latDelta >= 0 ? "top" : "bottom";
+      };
+
+      const labelOffset = {
+        top: [0, -12],
+        right: [12, 0],
+        bottom: [0, 12],
+        left: [-12, 0],
+      };
+
       stations.forEach((station) => {
+        const direction = labelDirection(station);
         const marker = L.circleMarker([station.lat, station.lon], markerStyle(true, false))
           .addTo(map)
-          .bindPopup(popupHtml(station));
+          .bindPopup(popupHtml(station))
+          .bindTooltip(station.name, {
+            permanent: true,
+            direction,
+            offset: labelOffset[direction],
+            className: "station-label",
+          });
 
         marker.on("click", () => {
           activeStation = station.name;
@@ -497,6 +558,7 @@
         });
 
         markersByName.set(station.name, marker);
+        labelsByName.set(station.name, marker.getTooltip());
       });
 
       function focusStation(name, shouldOpenPopup = true) {
@@ -566,9 +628,34 @@
         });
       }
 
+      function refreshLabels() {
+        const zoom = map.getZoom();
+
+        stations.forEach((station) => {
+          const marker = markersByName.get(station.name);
+          const tooltip = labelsByName.get(station.name);
+          const matched = matchesSearch(station);
+          const selected = station.name === activeStation;
+          const shouldShow =
+            selected || (matched && (currentQuery.length > 0 || zoom >= labelZoomThreshold));
+
+          if (shouldShow) {
+            marker.openTooltip();
+
+            const label = tooltip.getElement();
+            if (label) {
+              label.classList.toggle("is-active", selected);
+            }
+          } else {
+            marker.closeTooltip();
+          }
+        });
+      }
+
       function refresh() {
         renderList();
         refreshMarkers();
+        refreshLabels();
       }
 
       function syncPanelVisibility() {
@@ -612,6 +699,8 @@
         map.closePopup();
         refresh();
       });
+
+      map.on("zoomend", refreshLabels);
 
       syncPanelVisibility();
       refresh();
