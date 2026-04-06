@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Oslo Subway Map</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <style>
+      :root {
+        --bg: #f6f2e8;
+        --paper: rgba(255, 251, 245, 0.78);
+        --ink: #112019;
+        --muted: #56635b;
+        --accent: #e4572e;
+        --accent-dark: #ad3412;
+        --accent-soft: rgba(228, 87, 46, 0.14);
+        --line: rgba(17, 32, 25, 0.1);
+        --shadow: 0 28px 60px rgba(17, 32, 25, 0.14);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      body {
+        font-family: "IBM Plex Sans", sans-serif;
+        color: var(--ink);
+        overflow: hidden;
+        background:
+          radial-gradient(circle at top left, rgba(19, 128, 107, 0.18), transparent 28%),
+          radial-gradient(circle at top right, rgba(228, 87, 46, 0.22), transparent 26%),
+          linear-gradient(180deg, #fbf8f0 0%, var(--bg) 100%);
+      }
+
+      .page {
+        width: 100vw;
+        height: 100vh;
+      }
+
+      .map-shell {
+        position: relative;
+        width: 100%;
+        height: 100%;
+      }
+
+      .overlay-stack {
+        display: grid;
+        gap: 0.7rem;
+        width: min(360px, calc(100vw - 6rem));
+        pointer-events: auto;
+      }
+
+      .floating-panel,
+      .launcher-panel {
+        border: 1px solid var(--line);
+        border-radius: 1rem;
+        background: rgba(255, 252, 247, 0.86);
+        backdrop-filter: blur(14px);
+        box-shadow: var(--shadow);
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.7rem;
+        padding: 0.85rem;
+        align-items: center;
+      }
+
+      .search {
+        width: 100%;
+        padding: 0.82rem 0.95rem;
+        border-radius: 0.9rem;
+        border: 1px solid rgba(17, 32, 25, 0.14);
+        background: rgba(255, 255, 255, 0.92);
+        font: inherit;
+        color: var(--ink);
+      }
+
+      .search:focus,
+      button:focus {
+        outline: 2px solid rgba(228, 87, 46, 0.36);
+        outline-offset: 2px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 0.9rem;
+        padding: 0.82rem 1rem;
+        background: var(--ink);
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: #0b140f;
+      }
+
+      .button-row,
+      .launcher-panel {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.55rem;
+      }
+
+      .launcher-panel {
+        display: inline-flex;
+        padding: 0.4rem;
+        border-radius: 999px;
+        pointer-events: auto;
+      }
+
+      .icon-button,
+      .launcher-button {
+        min-width: 0;
+        width: 2.9rem;
+        height: 2.9rem;
+        padding: 0;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .icon {
+        width: 1.2rem;
+        height: 1.2rem;
+        display: block;
+      }
+
+      .station-panel {
+        padding: 0.75rem;
+      }
+
+      .station-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        max-height: min(48vh, 420px);
+        overflow: auto;
+      }
+
+      .station-list li + li {
+        margin-top: 0.45rem;
+      }
+
+      .station-card {
+        width: 100%;
+        display: grid;
+        gap: 0.2rem;
+        text-align: left;
+        padding: 0.78rem 0.88rem;
+        border-radius: 0.9rem;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--ink);
+      }
+
+      .station-card:hover {
+        background: rgba(255, 255, 255, 0.68);
+        border-color: rgba(17, 32, 25, 0.08);
+      }
+
+      .station-card.active {
+        background: linear-gradient(135deg, var(--accent-soft), rgba(255, 255, 255, 0.82));
+        border-color: rgba(228, 87, 46, 0.22);
+      }
+
+      .station-card strong {
+        font-size: 1rem;
+      }
+
+      .map-ui {
+        position: absolute;
+        z-index: 500;
+        top: 1rem;
+        left: 1rem;
+        display: grid;
+        gap: 0.7rem;
+        width: fit-content;
+        pointer-events: auto;
+      }
+
+      #map {
+        width: 100%;
+        height: 100%;
+      }
+
+      .leaflet-popup-content-wrapper {
+        border-radius: 1rem;
+      }
+
+      .popup-title {
+        margin: 0 0 0.15rem;
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 1rem;
+      }
+
+      .popup-copy {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+
+      @media (max-width: 980px) {
+        .overlay-stack {
+          width: min(340px, calc(100vw - 5.25rem));
+        }
+      }
+
+      @media (max-width: 680px) {
+        .controls {
+          grid-template-columns: minmax(0, 1fr) auto;
+        }
+
+        .map-ui {
+          top: 0.75rem;
+          left: 0.75rem;
+        }
+
+        .overlay-stack {
+          width: 100%;
+        }
+
+        .station-list {
+          max-height: min(38vh, 320px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="map-shell">
+        <div class="map-ui">
+          <div id="collapsed-toggle" class="launcher-panel">
+            <button
+              id="collapsed-toggle-button"
+              class="launcher-button"
+              type="button"
+              aria-label="Show stations"
+              title="Show stations"
+              aria-controls="overlay-stack"
+            >
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M4 7h16M4 12h16M4 17h16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+          <div id="overlay-stack" class="overlay-stack" hidden>
+            <div class="floating-panel">
+              <div class="controls">
+                <input
+                  id="search"
+                  class="search"
+                  type="search"
+                  placeholder="Search stations"
+                  aria-label="Search Oslo subway stations"
+                />
+                <div class="button-row">
+                  <button id="reset-view" type="button">Reset</button>
+                  <button
+                    id="toggle-panel"
+                    class="icon-button"
+                    type="button"
+                    aria-label="Close stations panel"
+                    title="Close stations panel"
+                    aria-controls="overlay-stack"
+                  >
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        d="M6 6l12 12M18 6L6 18"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="floating-panel station-panel">
+              <ul id="station-list" class="station-list"></ul>
+            </div>
+          </div>
+        </div>
+        <div id="map" aria-label="Map of Oslo with subway stations marked"></div>
+      </section>
+    </main>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script>
+      const stations = [
+        { name: "Ammerud", lat: 59.95777778, lon: 10.87083333 },
+        { name: "Avløs", lat: 59.91444444, lon: 10.55166667 },
+        { name: "Bekkestua", lat: 59.91633, lon: 10.58756 },
+        { name: "Berg", lat: 59.95055556, lon: 10.745 },
+        { name: "Bergkrystallen", lat: 59.86694444, lon: 10.82138889 },
+        { name: "Besserud", lat: 59.9575, lon: 10.67222222 },
+        { name: "Bjørnsletta", lat: 59.92638889, lon: 10.63416667 },
+        { name: "Blindern", lat: 59.94, lon: 10.71611111 },
+        { name: "Bogerud", lat: 59.87527778, lon: 10.84194444 },
+        { name: "Borgen", lat: 59.93444444, lon: 10.69583333 },
+        { name: "Brattlikollen", lat: 59.88666667, lon: 10.80055556 },
+        { name: "Brynseng", lat: 59.90916667, lon: 10.8125 },
+        { name: "Bøler", lat: 59.88361111, lon: 10.84277778 },
+        { name: "Carl Berners plass", lat: 59.92555556, lon: 10.77833333 },
+        { name: "Eiksmarka", lat: 59.94666667, lon: 10.62222222 },
+        { name: "Ekraveien", lat: 59.95027778, lon: 10.63666667 },
+        { name: "Ellingsrudåsen", lat: 59.93583333, lon: 10.91638889 },
+        { name: "Ensjø", lat: 59.91333333, lon: 10.78805556 },
+        { name: "Forskningsparken", lat: 59.94361111, lon: 10.72111111 },
+        { name: "Frognerseteren", lat: 59.97888889, lon: 10.67777778 },
+        { name: "Frøen", lat: 59.93416667, lon: 10.70916667 },
+        { name: "Furuset", lat: 59.94083333, lon: 10.89722222 },
+        { name: "Gaustad", lat: 59.94555556, lon: 10.71027778 },
+        { name: "Gjettum", lat: 59.906, lon: 10.5212 },
+        { name: "Gjønnes", lat: 59.9149, lon: 10.5807 },
+        { name: "Godlia", lat: 59.90805556, lon: 10.83527778 },
+        { name: "Grorud", lat: 59.96111111, lon: 10.88138889 },
+        { name: "Gråkammen", lat: 59.95527778, lon: 10.70166667 },
+        { name: "Grønland", lat: 59.91305556, lon: 10.75805556 },
+        { name: "Gulleråsen", lat: 59.95611111, lon: 10.69638889 },
+        { name: "Hasle", lat: 59.92388889, lon: 10.79333333 },
+        { name: "Haslum", lat: 59.915, lon: 10.5609 },
+        { name: "Hauger", lat: 59.91083333, lon: 10.51138889 },
+        { name: "Haugerud", lat: 59.9225, lon: 10.855 },
+        { name: "Hellerud", lat: 59.90972222, lon: 10.83027778 },
+        { name: "Helsfyr", lat: 59.91277778, lon: 10.80083333 },
+        { name: "Holmen", lat: 59.94583333, lon: 10.66694444 },
+        { name: "Holmenkollen", lat: 59.96027778, lon: 10.66222222 },
+        { name: "Holstein", lat: 59.96055556, lon: 10.74 },
+        { name: "Hovseter", lat: 59.94611111, lon: 10.65444444 },
+        { name: "Høyenhall", lat: 59.90527778, lon: 10.81916667 },
+        { name: "Jar", lat: 59.926635, lon: 10.620303 },
+        { name: "Jernbanetorget", lat: 59.91166667, lon: 10.75083333 },
+        { name: "Kalbakken", lat: 59.95388889, lon: 10.86666667 },
+        { name: "Karlsrud", lat: 59.87972222, lon: 10.80527778 },
+        { name: "Kolsås", lat: 59.91527778, lon: 10.50083333 },
+        { name: "Kringsjå", lat: 59.96361111, lon: 10.73472222 },
+        { name: "Lambertseter", lat: 59.8725, lon: 10.81027778 },
+        { name: "Lijordet", lat: 59.94083333, lon: 10.61638889 },
+        { name: "Lillevann", lat: 59.98055556, lon: 10.65277778 },
+        { name: "Lindeberg", lat: 59.93277778, lon: 10.88194444 },
+        { name: "Linderud", lat: 59.94055556, lon: 10.83916667 },
+        { name: "Løren", lat: 59.9360083, lon: 10.7883556 },
+        { name: "Majorstuen", lat: 59.92972222, lon: 10.71472222 },
+        { name: "Makrellbekken", lat: 59.94194444, lon: 10.67361111 },
+        { name: "Manglerud", lat: 59.89777778, lon: 10.81166667 },
+        { name: "Midtstuen", lat: 59.96111111, lon: 10.68305556 },
+        { name: "Montebello", lat: 59.93472222, lon: 10.66833333 },
+        { name: "Mortensrud", lat: 59.84916667, lon: 10.82777778 },
+        { name: "Munkelia", lat: 59.86833333, lon: 10.81277778 },
+        { name: "Nationaltheatret", lat: 59.91472222, lon: 10.73305556 },
+        { name: "Nydalen", lat: 59.95, lon: 10.76388889 },
+        { name: "Oppsal", lat: 59.89277778, lon: 10.84 },
+        { name: "Ringstabekk", lat: 59.9201078, lon: 10.6043817 },
+        { name: "Ris", lat: 59.9475, lon: 10.705 },
+        { name: "Risløkka", lat: 59.93222222, lon: 10.82305556 },
+        { name: "Rommen", lat: 59.96138889, lon: 10.90777778 },
+        { name: "Romsås", lat: 59.96194444, lon: 10.89055556 },
+        { name: "Ryen", lat: 59.895, lon: 10.804 },
+        { name: "Røa", lat: 59.94666667, lon: 10.64388889 },
+        { name: "Rødtvet", lat: 59.95083333, lon: 10.85694444 },
+        { name: "Sinsen", lat: 59.93722222, lon: 10.78194444 },
+        { name: "Skogen", lat: 59.97361111, lon: 10.64722222 },
+        { name: "Skullerud", lat: 59.86611111, lon: 10.83916667 },
+        { name: "Skådalen", lat: 59.96166667, lon: 10.69 },
+        { name: "Skøyenåsen", lat: 59.89861111, lon: 10.83638889 },
+        { name: "Slemdal", lat: 59.95055556, lon: 10.69416667 },
+        { name: "Smestad", lat: 59.93722222, lon: 10.68333333 },
+        { name: "Sognsvann", lat: 59.96694444, lon: 10.73388889 },
+        { name: "Steinerud", lat: 59.93861111, lon: 10.70444444 },
+        { name: "Storo", lat: 59.944071, lon: 10.778703 },
+        { name: "Stortinget", lat: 59.91277778, lon: 10.74166667 },
+        { name: "Stovner", lat: 59.96194444, lon: 10.92305556 },
+        { name: "Trosterud", lat: 59.92666667, lon: 10.86361111 },
+        { name: "Tveita", lat: 59.91361111, lon: 10.84111111 },
+        { name: "Tåsen", lat: 59.95333333, lon: 10.75138889 },
+        { name: "Tøyen", lat: 59.915, lon: 10.77611111 },
+        { name: "Ullernåsen", lat: 59.93111111, lon: 10.65583333 },
+        { name: "Ullevål stadion", lat: 59.94638889, lon: 10.73166667 },
+        { name: "Ulsrud", lat: 59.8896, lon: 10.8494 },
+        { name: "Veitvet", lat: 59.94444444, lon: 10.84638889 },
+        { name: "Vestli", lat: 59.97194444, lon: 10.92833333 },
+        { name: "Vettakollen", lat: 59.96, lon: 10.69527778 },
+        { name: "Vinderen", lat: 59.9425, lon: 10.70472222 },
+        { name: "Voksenkollen", lat: 59.98, lon: 10.66527778 },
+        { name: "Voksenlia", lat: 59.96666667, lon: 10.655 },
+        { name: "Vollebekk", lat: 59.93666667, lon: 10.83138889 },
+        { name: "Åsjordet", lat: 59.92861111, lon: 10.64666667 },
+        { name: "Økern", lat: 59.92805556, lon: 10.80444444 },
+        { name: "Østerås", lat: 59.93916667, lon: 10.60888889 },
+        { name: "Østhorn", lat: 59.95583333, lon: 10.75111111 },
+      ];
+
+      const searchInput = document.getElementById("search");
+      const resetViewButton = document.getElementById("reset-view");
+      const stationList = document.getElementById("station-list");
+      const togglePanelButton = document.getElementById("toggle-panel");
+      const collapsedToggleButton = document.getElementById("collapsed-toggle-button");
+      const collapsedToggle = document.getElementById("collapsed-toggle");
+      const overlayStack = document.getElementById("overlay-stack");
+
+      const map = L.map("map", {
+        zoomControl: false,
+        minZoom: 10,
+      });
+
+      L.control.zoom({ position: "bottomright" }).addTo(map);
+
+      L.tileLayer(
+        "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+        {
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+          subdomains: "abcd",
+          maxZoom: 20,
+        }
+      ).addTo(map);
+
+      const allBounds = L.latLngBounds(stations.map((station) => [station.lat, station.lon]));
+      map.fitBounds(allBounds.pad(0.08));
+
+      const stationsByName = new Map(stations.map((station) => [station.name, station]));
+      const markersByName = new Map();
+      let activeStation = "";
+      let currentQuery = "";
+      let isPanelHidden = true;
+
+      const markerStyle = (matched, selected) => ({
+        radius: selected ? 8 : 6,
+        color: selected ? "#7f2008" : "#ffffff",
+        weight: selected ? 2.3 : 1.6,
+        fillColor: "#e4572e",
+        opacity: matched ? 1 : 0.18,
+        fillOpacity: selected ? 0.98 : matched ? 0.82 : 0.1,
+      });
+
+      const matchesSearch = (station) =>
+        station.name.toLocaleLowerCase("en").includes(currentQuery);
+
+      const popupHtml = (station) =>
+        `
+          <div>
+            <p class="popup-title">${station.name}</p>
+            <p class="popup-copy">Oslo T-bane station</p>
+          </div>
+        `;
+
+      stations.forEach((station) => {
+        const marker = L.circleMarker([station.lat, station.lon], markerStyle(true, false))
+          .addTo(map)
+          .bindPopup(popupHtml(station));
+
+        marker.on("click", () => {
+          activeStation = station.name;
+          marker.openPopup();
+          refresh();
+          scrollStationIntoView(station.name);
+        });
+
+        markersByName.set(station.name, marker);
+      });
+
+      function focusStation(name, shouldOpenPopup = true) {
+        const station = stationsByName.get(name);
+        if (!station) {
+          return;
+        }
+
+        activeStation = name;
+        const nextZoom = Math.max(map.getZoom(), 14);
+        map.flyTo([station.lat, station.lon], nextZoom, {
+          animate: true,
+          duration: 0.7,
+        });
+
+        if (shouldOpenPopup) {
+          markersByName.get(name).openPopup();
+        }
+
+        refresh();
+        scrollStationIntoView(name);
+      }
+
+      function scrollStationIntoView(name) {
+        const element = stationList.querySelector(`[data-station="${CSS.escape(name)}"]`);
+        if (element) {
+          element.scrollIntoView({ block: "nearest" });
+        }
+      }
+
+      function renderList() {
+        const visibleStations = stations.filter(matchesSearch);
+        stationList.innerHTML = "";
+
+        if (!visibleStations.length) {
+          const emptyItem = document.createElement("li");
+          emptyItem.innerHTML =
+            '<button class="station-card" type="button" disabled><strong>No matches</strong><span>Try another station name.</span></button>';
+          stationList.appendChild(emptyItem);
+          return;
+        }
+
+        visibleStations.forEach((station) => {
+          const item = document.createElement("li");
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "station-card";
+          button.dataset.station = station.name;
+
+          if (station.name === activeStation) {
+            button.classList.add("active");
+          }
+
+          button.innerHTML = `<strong>${station.name}</strong>`;
+
+          button.addEventListener("click", () => focusStation(station.name));
+          item.appendChild(button);
+          stationList.appendChild(item);
+        });
+      }
+
+      function refreshMarkers() {
+        stations.forEach((station) => {
+          const matched = matchesSearch(station);
+          const selected = station.name === activeStation;
+          markersByName.get(station.name).setStyle(markerStyle(matched, selected));
+        });
+      }
+
+      function refresh() {
+        renderList();
+        refreshMarkers();
+      }
+
+      function syncPanelVisibility() {
+        overlayStack.hidden = isPanelHidden;
+        collapsedToggle.hidden = !isPanelHidden;
+        togglePanelButton.setAttribute("aria-expanded", String(!isPanelHidden));
+        collapsedToggleButton.setAttribute("aria-expanded", String(!isPanelHidden));
+      }
+
+      searchInput.addEventListener("input", (event) => {
+        currentQuery = event.target.value.trim().toLocaleLowerCase("en");
+
+        if (activeStation && !matchesSearch(stationsByName.get(activeStation))) {
+          activeStation = "";
+        }
+
+        refresh();
+      });
+
+      togglePanelButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        isPanelHidden = true;
+        syncPanelVisibility();
+      });
+
+      collapsedToggleButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        isPanelHidden = false;
+        syncPanelVisibility();
+      });
+
+      resetViewButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        activeStation = "";
+        currentQuery = "";
+        searchInput.value = "";
+        map.fitBounds(allBounds.pad(0.08));
+        map.closePopup();
+        refresh();
+      });
+
+      syncPanelVisibility();
+      refresh();
+    </script>
+  </body>
+</html>
