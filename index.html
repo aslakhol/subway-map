@@ -285,12 +285,6 @@
         font-size: 1rem;
       }
 
-      .popup-copy {
-        margin: 0;
-        color: var(--muted);
-        font-size: 0.88rem;
-      }
-
       .popup-stack {
         display: grid;
         gap: 0.55rem;
@@ -1080,7 +1074,6 @@
         `
           <div class="popup-stack">
             <p class="popup-title">${station.name}</p>
-            <p class="popup-copy">${lineCopy(station)}</p>
             ${lineBadgesHtml(station.lines)}
           </div>
         `;
