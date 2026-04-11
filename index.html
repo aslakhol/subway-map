@@ -37,6 +37,18 @@
         display: none !important;
       }
 
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
       html,
       body {
         margin: 0;
@@ -151,6 +163,58 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
+      }
+
+      .map-action-control.leaflet-control {
+        margin-right: 0.85rem;
+        margin-bottom: 0.85rem;
+      }
+
+      .map-action-cluster {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.7rem;
+      }
+
+      .location-toggle,
+      .zoom-button {
+        position: relative;
+        transition:
+          background 160ms ease,
+          transform 160ms ease,
+          box-shadow 160ms ease;
+      }
+
+      .location-toggle.is-active {
+        background: var(--accent);
+        box-shadow: inset 0 0 0 1px rgba(255, 252, 247, 0.18);
+      }
+
+      .location-toggle.is-active:hover {
+        background: var(--accent-dark);
+      }
+
+      .location-toggle.is-locating .icon {
+        animation: location-control-pulse 1.15s ease-in-out infinite;
+      }
+
+      .location-toggle.is-blocked {
+        background: #7e3f2a;
+      }
+
+      .location-toggle.is-blocked:hover {
+        background: #6a311f;
+      }
+
+      .zoom-controls {
+        gap: 0.45rem;
+      }
+
+      .zoom-button {
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 1.35rem;
+        font-weight: 700;
+        line-height: 1;
       }
 
       .icon {
@@ -308,6 +372,24 @@
         border-radius: 1rem;
       }
 
+      .user-location-icon {
+        background: transparent;
+        border: 0;
+      }
+
+      .user-location-marker-shell {
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        filter: drop-shadow(0 5px 12px rgba(17, 32, 25, 0.28));
+      }
+
+      .user-location-marker-shell svg {
+        display: block;
+        overflow: visible;
+      }
+
       .popup-title {
         margin: 0 0 0.15rem;
         font-family: "Space Grotesk", sans-serif;
@@ -346,6 +428,19 @@
 
       .station-label.is-active {
         color: var(--accent-dark);
+      }
+
+      @keyframes location-control-pulse {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+
+        50% {
+          transform: scale(0.88);
+          opacity: 0.72;
+        }
       }
 
       @media (max-width: 980px) {
@@ -992,8 +1087,6 @@
         closePopupOnClick: false,
       });
 
-      L.control.zoom({ position: "bottomright" }).addTo(map);
-
       L.tileLayer(
         "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
         {
@@ -1057,10 +1150,334 @@
       const markersByName = new Map();
       const labelsByName = new Map();
       const labelZoomThreshold = 13;
+      const LOCATION_MIN_ZOOM = 14;
       let activeStation = "";
       let currentQuery = "";
       let activeLineFilter = "";
       let isPanelHidden = true;
+      let locationToggleButton = null;
+      let locationStatusAnnouncer = null;
+      let userLocationWatchId = null;
+      let userLocationState = navigator.geolocation ? "idle" : "unsupported";
+      let userLocationPermissionState = navigator.permissions ? "prompt" : "unknown";
+      let shouldCenterOnUser = false;
+      let lastKnownUserLocation = null;
+
+      const userLocationMarker = L.marker([0, 0], {
+        icon: L.divIcon({
+          className: "user-location-icon",
+          html: `
+            <div class="user-location-marker-shell" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M12 2.8c-3.87 0-7 3.09-7 6.91 0 5.06 5.36 10.72 6.44 11.79a.8.8 0 0 0 1.12 0C13.64 20.43 19 14.77 19 9.71c0-3.82-3.13-6.91-7-6.91Z"
+                  fill="#e4572e"
+                  stroke="rgba(255, 252, 247, 0.96)"
+                  stroke-width="1.6"
+                  stroke-linejoin="round"
+                />
+                <circle cx="12" cy="9.7" r="2.5" fill="#fff7f0" />
+              </svg>
+            </div>
+          `,
+          iconSize: [24, 24],
+          iconAnchor: [12, 24],
+        }),
+        zIndexOffset: 1800,
+        keyboard: false,
+      }).bindPopup(`
+        <div class="popup-stack">
+          <p class="popup-title">Your location</p>
+          <p class="station-copy">Live position from your device.</p>
+        </div>
+      `);
+      const locationButtonIcon = (isBlocked = false) => `
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M12 3v2.8M12 18.2V21M3 12h2.8M18.2 12H21M12 7.4a4.6 4.6 0 1 1 0 9.2a4.6 4.6 0 0 1 0-9.2Z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <circle cx="12" cy="12" r="1.4" fill="currentColor" />
+          ${
+            isBlocked
+              ? `<path
+                  d="M6 18L18 6"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />`
+              : ""
+          }
+        </svg>
+      `;
+
+      const locationButtonCopy = {
+        idle: {
+          label: "Show your location",
+          title: "Show your location",
+        },
+        locating: {
+          label: "Finding your location",
+          title: "Finding your location. Click to stop.",
+        },
+        active: {
+          label: "Hide your location",
+          title: "Hide your location",
+        },
+        denied: {
+          label: "Location permission blocked",
+          title: "Location permission is blocked. Enable it in your browser to try again.",
+        },
+        error: {
+          label: "Retry showing your location",
+          title: "Couldn't get your location. Click to try again.",
+        },
+        unsupported: {
+          label: "Location unavailable",
+          title: "Location isn't available in this browser.",
+        },
+      };
+
+      function syncLocationButton() {
+        if (!locationToggleButton) {
+          return;
+        }
+
+        const copy = locationButtonCopy[userLocationState] || locationButtonCopy.idle;
+        const isActive = userLocationState === "active";
+        const isLocating = userLocationState === "locating";
+        const isBlocked =
+          userLocationState === "denied" ||
+          userLocationState === "error" ||
+          userLocationState === "unsupported";
+
+        locationToggleButton.innerHTML = locationButtonIcon(isBlocked);
+        locationToggleButton.classList.toggle("is-active", isActive);
+        locationToggleButton.classList.toggle("is-locating", isLocating);
+        locationToggleButton.classList.toggle("is-blocked", isBlocked);
+        locationToggleButton.setAttribute(
+          "aria-pressed",
+          String(isActive || isLocating)
+        );
+        locationToggleButton.setAttribute("aria-label", copy.label);
+        locationToggleButton.title = copy.title;
+
+        if (locationStatusAnnouncer) {
+          locationStatusAnnouncer.textContent = copy.title;
+        }
+      }
+
+      function clearUserLocationLayers() {
+        if (map.hasLayer(userLocationMarker)) {
+          userLocationMarker.remove();
+        }
+      }
+
+      function stopUserLocationTracking(nextState = "idle") {
+        if (userLocationWatchId !== null) {
+          navigator.geolocation.clearWatch(userLocationWatchId);
+          userLocationWatchId = null;
+        }
+
+        shouldCenterOnUser = false;
+        clearUserLocationLayers();
+        userLocationState = nextState;
+        syncLocationButton();
+      }
+
+      function updateUserLocation(position) {
+        lastKnownUserLocation = position;
+        const latlng = [position.coords.latitude, position.coords.longitude];
+
+        userLocationMarker.setLatLng(latlng);
+
+        if (!map.hasLayer(userLocationMarker)) {
+          userLocationMarker.addTo(map);
+        }
+
+        userLocationState = "active";
+        syncLocationButton();
+
+        if (shouldCenterOnUser) {
+          map.flyTo(latlng, Math.max(map.getZoom(), LOCATION_MIN_ZOOM), {
+            animate: true,
+            duration: 0.7,
+          });
+          shouldCenterOnUser = false;
+        }
+      }
+
+      function handleUserLocationError(error) {
+        if (error.code === error.PERMISSION_DENIED) {
+          userLocationPermissionState = "denied";
+          stopUserLocationTracking("denied");
+          return;
+        }
+
+        if (map.hasLayer(userLocationMarker)) {
+          return;
+        }
+
+        stopUserLocationTracking("error");
+      }
+
+      function startUserLocationTracking() {
+        if (!navigator.geolocation) {
+          userLocationState = "unsupported";
+          syncLocationButton();
+          return;
+        }
+
+        if (
+          navigator.permissions &&
+          userLocationPermissionState === "denied"
+        ) {
+          userLocationState = "denied";
+          syncLocationButton();
+          return;
+        }
+
+        shouldCenterOnUser = true;
+        if (userLocationPermissionState === "granted" && lastKnownUserLocation) {
+          updateUserLocation(lastKnownUserLocation);
+        } else {
+          userLocationState = "locating";
+          syncLocationButton();
+        }
+
+        userLocationWatchId = navigator.geolocation.watchPosition(
+          updateUserLocation,
+          handleUserLocationError,
+          {
+            enableHighAccuracy: true,
+            maximumAge: 15000,
+            timeout: 10000,
+          }
+        );
+      }
+
+      function toggleUserLocation() {
+        if (userLocationState === "active" || userLocationState === "locating") {
+          stopUserLocationTracking();
+          return;
+        }
+
+        startUserLocationTracking();
+      }
+
+      function installBottomRightControls() {
+        const actionControl = L.control({ position: "bottomright" });
+
+        actionControl.onAdd = () => {
+          const container = L.DomUtil.create("div", "leaflet-control map-action-control");
+          const cluster = L.DomUtil.create("div", "map-action-cluster", container);
+          const locationPanel = L.DomUtil.create("div", "launcher-panel", cluster);
+          locationToggleButton = L.DomUtil.create(
+            "button",
+            "launcher-button location-toggle",
+            locationPanel
+          );
+          locationToggleButton.type = "button";
+
+          locationStatusAnnouncer = L.DomUtil.create("span", "sr-only", locationPanel);
+          locationStatusAnnouncer.setAttribute("aria-live", "polite");
+
+          const zoomPanel = L.DomUtil.create(
+            "div",
+            "launcher-panel zoom-controls",
+            cluster
+          );
+          const zoomInButton = L.DomUtil.create(
+            "button",
+            "launcher-button zoom-button",
+            zoomPanel
+          );
+          zoomInButton.type = "button";
+          zoomInButton.setAttribute("aria-label", "Zoom in");
+          zoomInButton.title = "Zoom in";
+          zoomInButton.textContent = "+";
+
+          const zoomOutButton = L.DomUtil.create(
+            "button",
+            "launcher-button zoom-button",
+            zoomPanel
+          );
+          zoomOutButton.type = "button";
+          zoomOutButton.setAttribute("aria-label", "Zoom out");
+          zoomOutButton.title = "Zoom out";
+          zoomOutButton.textContent = "-";
+
+          L.DomEvent.disableClickPropagation(container);
+          L.DomEvent.disableScrollPropagation(container);
+          L.DomEvent.on(locationToggleButton, "click", (event) => {
+            L.DomEvent.stop(event);
+            toggleUserLocation();
+          });
+          L.DomEvent.on(zoomInButton, "click", (event) => {
+            L.DomEvent.stop(event);
+            map.zoomIn();
+          });
+          L.DomEvent.on(zoomOutButton, "click", (event) => {
+            L.DomEvent.stop(event);
+            map.zoomOut();
+          });
+
+          syncLocationButton();
+          return container;
+        };
+
+        actionControl.addTo(map);
+      }
+
+      function observeLocationPermission() {
+        if (!navigator.permissions?.query) {
+          syncLocationButton();
+          return;
+        }
+
+        navigator.permissions
+          .query({ name: "geolocation" })
+          .then((permissionStatus) => {
+            userLocationPermissionState = permissionStatus.state;
+
+            const handlePermissionChange = () => {
+              userLocationPermissionState = permissionStatus.state;
+
+              if (permissionStatus.state === "denied") {
+                stopUserLocationTracking("denied");
+                return;
+              }
+
+              if (
+                userLocationState === "denied" ||
+                userLocationState === "error"
+              ) {
+                userLocationState = "idle";
+              }
+
+              syncLocationButton();
+            };
+
+            if (typeof permissionStatus.addEventListener === "function") {
+              permissionStatus.addEventListener("change", handlePermissionChange);
+            } else {
+              permissionStatus.onchange = handlePermissionChange;
+            }
+
+            syncLocationButton();
+          })
+          .catch(() => {
+            syncLocationButton();
+          });
+      }
+
+      installBottomRightControls();
+      observeLocationPermission();
 
       const badgeHtml = (line) =>
         `<span class="line-badge" style="--line-color:${lineMeta[line].color}; --line-text:${lineMeta[line].text};" aria-label="${lineMeta[line].label}">${line}</span>`;
